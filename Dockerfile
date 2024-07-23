@@ -21,5 +21,8 @@ COPY src ./src
 # Build the application
 RUN cargo build --release
 
+EXPOSE 3000
+
 # Command to run the application with cargo-watch
-CMD ["cargo-watch", "-qc", "-x", "run"]
+CMD ["./target/release/snap7-rust"]
+

@@ -6,7 +6,7 @@ fn main() {
     let client = S7Client::create();
     
     loop {
-        match client.connect_to("192.168.0.1", 1, 1) {
+        match client.connect_to("192.168.0.1", 0, 2) {
             Ok(_) => {
                 println!("Connected to PLC");
                 break;

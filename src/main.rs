@@ -1,5 +1,5 @@
-use snap7_rust::run;
-
+mod routes;
+use routes::run;
 
 #[tokio::main]
 async fn main() {

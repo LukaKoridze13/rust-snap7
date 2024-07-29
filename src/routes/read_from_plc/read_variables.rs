@@ -36,23 +36,28 @@ pub async fn read_variables(Query(query): Query<ReadVariablesQuery>) -> impl Int
         Ok(_) => {
             let mut buff = vec![0u8; query.size as usize];
             match client.db_read(query.db_number, query.start, query.size, &mut buff) {
-                Ok(_) => (
-                    StatusCode::OK,
-                    "Read successful".to_string(),
-                    buff,
-                ),
-                Err(e) => (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("Error reading DB: {:?}", e),
-                    vec![],
-                ),
+                Ok(_) => {
+                    println!("Read successful, buffer: {:?}", buff);
+                    (StatusCode::OK, "Read successful".to_string(), buff)
+                },
+                Err(e) => {
+                    println!("Error reading DB: {:?}", e);
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        format!("Error reading DB: {:?}", e),
+                        vec![],
+                    )
+                },
             }
         },
-        Err(e) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("Error connecting to PLC: {:?}", e),
-            vec![],
-        ),
+        Err(e) => {
+            println!("Error connecting to PLC: {:?}", e);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Error connecting to PLC: {:?}", e),
+                vec![],
+            )
+        },
     };
 
     let response = ReadVariablesResponse {

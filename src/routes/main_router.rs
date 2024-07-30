@@ -77,7 +77,12 @@ pub fn create_routes() -> Router {
 
     let plc_router = Router::new()
         .route("/", get(controllers::get_plc_operating_mode))
-        .route("/configure_connection", post(controllers::change_plc_connection_settings)).layer(middleware::from_fn(require_plc_connection));
+        .route("/configure_connection", post(controllers::change_plc_connection_settings))
+        .route("/stop", get(controllers::stop_plc))
+        .route("/hot_start", get(controllers::hot_start))
+        .route("/cold_start", get(controllers::cold_start))
+
+        .layer(middleware::from_fn(require_plc_connection));
 
 
 

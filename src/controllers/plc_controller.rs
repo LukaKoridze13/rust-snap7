@@ -77,3 +77,126 @@ pub async fn change_plc_connection_settings(
 
     (status_code, response)
 }
+
+pub async fn stop_plc(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
+    // Lock the state to get access
+    let state = state.lock().unwrap();
+    
+    // Attempt to stop the PLC
+    let result = state.s7_client.plc_stop();
+    
+    // Determine the response based on the result
+    let (status_code, response) = match result {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ChangeConnectionResponse {
+                message: "PLC Stopped".to_string(),
+            }),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ChangeConnectionResponse {
+                message: format!("Couldn't stop PLC. Reason: {:?}", e),
+            }),
+        ),
+    };
+    
+    (status_code, response)
+}
+
+pub async fn hot_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
+    // Lock the state to get access
+    let  state = state.lock().unwrap();
+
+    // Check the current PLC status
+    let status = match state.get_plc_status() {
+        Ok(status) => status,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ChangeConnectionResponse {
+                    message: format!("Failed to get PLC status: {:?}", e),
+                }),
+            ).into_response();
+        }
+    };
+
+    // If the PLC is already running, return an appropriate message
+    if status == 0x08 {
+        return (
+            StatusCode::OK,
+            Json(ChangeConnectionResponse {
+                message: "PLC is already running".to_string(),
+            }),
+        ).into_response();
+    }
+    
+    // Attempt to start the PLC in hot mode
+    let result = state.s7_client.plc_hot_start();
+    
+    // Determine the response based on the result
+    let (status_code, response) = match result {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ChangeConnectionResponse {
+                message: "PLC Started - Mode: HOT".to_string(),
+            }),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ChangeConnectionResponse {
+                message: format!("Couldn't start PLC. Reason: {:?}", e),
+            }),
+        ),
+    };
+    
+    (status_code, response).into_response()
+}
+
+pub async fn cold_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
+    let  state = state.lock().unwrap();
+
+    // Check the current PLC status
+    let status = match state.get_plc_status() {
+        Ok(status) => status,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ChangeConnectionResponse {
+                    message: format!("Failed to get PLC status: {:?}", e),
+                }),
+            ).into_response();
+        }
+    };
+
+    // If the PLC is already running, return an appropriate message
+    if status == 0x08 {
+        return (
+            StatusCode::OK,
+            Json(ChangeConnectionResponse {
+                message: "PLC is already running".to_string(),
+            }),
+        ).into_response();
+    }
+    
+    // Attempt to stop the PLC
+    let result = state.s7_client.plc_cold_start();
+    
+    // Determine the response based on the result
+    let (status_code, response) = match result {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ChangeConnectionResponse {
+                message: "PLC Started - Mode: Cold".to_string(),
+            }),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ChangeConnectionResponse {
+                message: format!("Couldn't start PLC. Reason: {:?}", e),
+            }),
+        ),
+    };
+    
+    (status_code, response).into_response()
+}

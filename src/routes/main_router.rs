@@ -1,12 +1,21 @@
-use std::sync::{Arc, Mutex};
+use crate::{
+    controllers::{self, SharedState},
+    heater::Heater,
+    middlewares::require_plc_connection,
+};
+use axum::{
+    middleware,
+    routing::{get, post},
+    Router,
+};
+use pid::Pid;
 use serde::Deserialize;
-use axum::{middleware, routing::{get, post}, Router};
 use snap7_rs::S7Client;
 use std::fmt;
-use crate::{controllers, middlewares::require_plc_connection};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-
-#[derive(Deserialize,Debug)]
+#[derive(Deserialize, Debug)]
 pub struct PLCConfig {
     pub address: String,
     pub rack: i32,
@@ -31,10 +40,10 @@ impl fmt::Debug for AppState {
     }
 }
 
-
 impl AppState {
     pub fn connect_to_plc(&self) -> Result<(), anyhow::Error> {
-        self.s7_client.connect_to(&self.address, self.rack, self.slot)
+        self.s7_client
+            .connect_to(&self.address, self.rack, self.slot)
     }
 
     pub fn get_plc_status(&self) -> Result<i32, anyhow::Error> {
@@ -50,7 +59,7 @@ impl AppState {
     }
 }
 
-pub fn create_routes() -> Router {
+pub async fn create_routes() -> Router {
     let s7_client = Arc::new(S7Client::create());
 
     let app_state = Arc::new(Mutex::new(AppState {
@@ -62,14 +71,42 @@ pub fn create_routes() -> Router {
 
     {
         let app_state = app_state.clone();
-        let app_state = app_state.lock().unwrap();
+        let app_state = app_state.lock().await;
         let connection_result = app_state.connect_to_plc();
 
         match connection_result {
-            Ok(_) => println!("** Connected to PLC. IP: {}, Rack: {}, Slot: {}", app_state.address, app_state.rack, app_state.slot),
+            Ok(_) => println!(
+                "** Connected to PLC. IP: {}, Rack: {}, Slot: {}",
+                app_state.address, app_state.rack, app_state.slot
+            ),
             Err(e) => println!("** Error connecting to PLC: {:?}", e),
         };
     }
+
+    let heater = Heater {
+        target_temp:46.0,
+        enabled: Arc::new(tokio::sync::Mutex::new(true)),
+    };
+
+    let pid = Arc::new(tokio::sync::Mutex::new(Pid::new (46.0, 100.0)));
+
+    let shared_state = Arc::new(Mutex::new(SharedState {
+        app_state,
+        heater,
+        pid,
+    }));
+
+    {
+        let shared_state_guard = shared_state.lock().await;
+        let mut pid_clone = shared_state_guard.pid.lock().await;
+
+        // Set proportional, integral, and derivative gains
+        pid_clone.p(1.0, 100.0); // Proportional gain with limit
+        pid_clone.i(0.1, 100.0); // Integral gain with limit
+        pid_clone.d(0.01, 100.0); // Derivative gain with limit
+    }
+
+   
 
     let health_check_router = Router::new()
         .route("/server", get(controllers::server_health_check))
@@ -77,20 +114,23 @@ pub fn create_routes() -> Router {
 
     let plc_router = Router::new()
         .route("/", get(controllers::get_plc_operating_mode))
-        .route("/configure_connection", post(controllers::change_plc_connection_settings))
+        .route(
+            "/configure_connection",
+            post(controllers::change_plc_connection_settings),
+        )
         .route("/stop", get(controllers::stop_plc))
         .route("/hot_start", get(controllers::hot_start))
         .route("/cold_start", get(controllers::cold_start))
-
         .layer(middleware::from_fn(require_plc_connection));
 
-
+    let heater_router = Router::new()
+        .route("/enable", get(controllers::enable_heater))
+        .route("/disable", get(controllers::disable_heater))
+        .with_state(shared_state.clone());
 
     Router::new()
         .nest("/health_check", health_check_router)
         .nest("/plc", plc_router)
-        .with_state(app_state)
+        .nest("/heater", heater_router)
+        .with_state(shared_state)
 }
-
-
-

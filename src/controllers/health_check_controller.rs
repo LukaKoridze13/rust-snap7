@@ -1,10 +1,11 @@
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use axum::{
     extract::State, http::StatusCode, response::IntoResponse, Json
 };
 use serde::Serialize;
-use crate::routes::AppState;
+
+use super::SharedState;
 
 #[derive(Serialize)]
 struct Response {
@@ -27,13 +28,13 @@ pub struct PLCResponse {
 }
 
 pub async fn plc_connection_check(
-    State(state): State<Arc<Mutex<AppState>>>,
+    State(state): State<Arc<Mutex<SharedState>>>,
 ) -> impl IntoResponse {
     // Lock the state to get a mutable reference
-    let state = state.lock().unwrap();
-    
+    let state = state.lock().await;
+    let app_state = state.app_state.lock().await;
     // Attempt to connect to the PLC
-    let connection_result = state.connect_to_plc();
+    let connection_result = app_state.connect_to_plc();
 
     // Determine the response based on the connection result
     let (status_code, message) = match connection_result {
@@ -49,9 +50,9 @@ pub async fn plc_connection_check(
 
     // Create the response struct with the current state information
     let response = PLCResponse {
-        address: state.address.clone(),
-        rack: state.rack,
-        slot: state.slot,
+        address: app_state.address.clone(),
+        rack: app_state.rack,
+        slot: app_state.slot,
         message,
     };
 

@@ -1,8 +1,11 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use crate::routes::{AppState, PLCConfig};
+use crate::routes::PLCConfig;
+
+use super::SharedState;
 
 #[derive(Serialize)]
 struct PlcStatusResponse {
@@ -10,9 +13,12 @@ struct PlcStatusResponse {
     message: String,
 }
 
-pub async fn get_plc_operating_mode(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
+pub async fn get_plc_operating_mode(
+    State(state): State<Arc<Mutex<SharedState>>>,
+) -> impl IntoResponse {
     // Lock the state to get access
-    let state = state.lock().unwrap();
+     let full_state = state.lock().await;
+    let state = full_state.app_state.lock().await;
 
     match state.get_plc_status() {
         Ok(status) => {
@@ -22,12 +28,24 @@ pub async fn get_plc_operating_mode(State(state): State<Arc<Mutex<AppState>>>) -
                 0x04 => "Stopped".to_string(),
                 _ => "Unknown Status Code".to_string(),
             };
-            (StatusCode::OK, Json(PlcStatusResponse { status_code: status, message }))
-        },
+            (
+                StatusCode::OK,
+                Json(PlcStatusResponse {
+                    status_code: status,
+                    message,
+                }),
+            )
+        }
         Err(e) => {
             let error_message = format!("Failed to get PLC status: {:?}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(PlcStatusResponse { status_code: -1, message: error_message }))
-        },
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(PlcStatusResponse {
+                    status_code: -1,
+                    message: error_message,
+                }),
+            )
+        }
     }
 }
 
@@ -37,12 +55,12 @@ struct ChangeConnectionResponse {
 }
 
 pub async fn change_plc_connection_settings(
-    State(state): State<Arc<Mutex<AppState>>>,
+    State(state): State<Arc<Mutex<SharedState>>>,
     Json(new_config): Json<PLCConfig>,
 ) -> impl IntoResponse {
-
     // Lock the state to get mutable access
-    let mut state = state.lock().unwrap();
+     let full_state = state.lock().await;
+    let mut state = full_state.app_state.lock().await;
 
     // Update the configuration
     state.update_config(new_config);
@@ -55,7 +73,6 @@ pub async fn change_plc_connection_settings(
             println!("** Failed to disconnect from PLC: {:?}", e);
         }
     };
-
 
     // Attempt to reconnect
     let connection_result = state.connect_to_plc();
@@ -78,13 +95,13 @@ pub async fn change_plc_connection_settings(
     (status_code, response)
 }
 
-pub async fn stop_plc(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
+pub async fn stop_plc(State(state): State<Arc<Mutex<SharedState>>>) -> impl IntoResponse {
     // Lock the state to get access
-    let state = state.lock().unwrap();
-    
+    let full_state = state.lock().await;
+    let state = full_state.app_state.lock().await;
     // Attempt to stop the PLC
     let result = state.s7_client.plc_stop();
-    
+
     // Determine the response based on the result
     let (status_code, response) = match result {
         Ok(_) => (
@@ -100,13 +117,14 @@ pub async fn stop_plc(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoRes
             }),
         ),
     };
-    
+
     (status_code, response)
 }
 
-pub async fn hot_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
+pub async fn hot_start(State(state): State<Arc<Mutex<SharedState>>>) -> impl IntoResponse {
     // Lock the state to get access
-    let  state = state.lock().unwrap();
+     let full_state = state.lock().await;
+    let state = full_state.app_state.lock().await;
 
     // Check the current PLC status
     let status = match state.get_plc_status() {
@@ -117,7 +135,8 @@ pub async fn hot_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoRe
                 Json(ChangeConnectionResponse {
                     message: format!("Failed to get PLC status: {:?}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -128,12 +147,13 @@ pub async fn hot_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoRe
             Json(ChangeConnectionResponse {
                 message: "PLC is already running".to_string(),
             }),
-        ).into_response();
+        )
+            .into_response();
     }
-    
+
     // Attempt to start the PLC in hot mode
     let result = state.s7_client.plc_hot_start();
-    
+
     // Determine the response based on the result
     let (status_code, response) = match result {
         Ok(_) => (
@@ -149,13 +169,13 @@ pub async fn hot_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoRe
             }),
         ),
     };
-    
+
     (status_code, response).into_response()
 }
 
-pub async fn cold_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoResponse {
-    let  state = state.lock().unwrap();
-
+pub async fn cold_start(State(state): State<Arc<Mutex<SharedState>>>) -> impl IntoResponse {
+    let full_state = state.lock().await;
+    let state = full_state.app_state.lock().await;
     // Check the current PLC status
     let status = match state.get_plc_status() {
         Ok(status) => status,
@@ -165,7 +185,8 @@ pub async fn cold_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoR
                 Json(ChangeConnectionResponse {
                     message: format!("Failed to get PLC status: {:?}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -176,12 +197,13 @@ pub async fn cold_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoR
             Json(ChangeConnectionResponse {
                 message: "PLC is already running".to_string(),
             }),
-        ).into_response();
+        )
+            .into_response();
     }
-    
+
     // Attempt to stop the PLC
     let result = state.s7_client.plc_cold_start();
-    
+
     // Determine the response based on the result
     let (status_code, response) = match result {
         Ok(_) => (
@@ -197,6 +219,6 @@ pub async fn cold_start(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoR
             }),
         ),
     };
-    
+
     (status_code, response).into_response()
 }

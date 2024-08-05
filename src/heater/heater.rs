@@ -7,7 +7,7 @@ use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Clone)]
 pub struct Heater {
-    pub target_temp:f64,
+    pub target_temp:f32,
     pub enabled: Arc<Mutex<bool>>, // Shared state for enabled
 }
 
